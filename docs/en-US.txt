@@ -1,0 +1,78 @@
+# IT Development & Integration Team Requirements
+
+## 1. Core Functions
+- Real-time analytics on CCTV streams for two use-cases:
+  - **Unsafe-Behavior Detection**: 8 classes (no helmet, no vest, no air blower, fall, absence, motionless, intrusion, improper floor covering)
+  - **People Counting**: Bi-directional at entrances
+- Continuous or scheduled detection; each analytic can be toggled per camera/zone
+
+## 2. Video Inputs & Infrastructure
+- Re-use existing CCTV cameras; add/relocate cameras (and expand CCTV NVRs) as needed for sufficient views/resolution
+- VAS must:
+  - Pull live streams
+  - Create 10s event clips (−5s / +5s)
+  - Encrypt and expose clips to authorized workstations and EMSD CMP (remote HQ)
+- Support ≥100 simultaneous 2MP streams for inference
+- Alert latency <5s
+- Accuracy >90%, false alarms <10%
+
+## 3. Hardware & Performance Targets
+- GPU-backed, high-performance servers
+- Clustering with local 1+1 hot-standby and remote 1+1 option
+- RAID-1 or better on each server; automatic fail-over with no visible interruption
+- At least 30% spare compute at peak and 20% expansion headroom
+- Support ≥5 concurrent client workstations (local/remote) with smooth UX
+
+## 4. Software Architecture & Extensibility
+- Multi-client / multi-server, distributed services over authenticated TCP/IP
+- All traffic over HTTPS (or similar) with encryption & digital signatures
+- Open plugin/SDK framework:
+  - Import 3rd-party AI models (formats: GGUF, Safetensors, PyTorch, ONNX)
+  - New analytics must be configurable like built-ins
+- Server-side plugin support for new device types & entities
+- Must run on 64-bit Windows Server 2022 / Windows 11 (or equivalent)
+- SQL-based central database; each server keeps a local DB and syncs with master
+
+## 5. User Roles, Security & Data Protection
+- Roles: Operator, Supervisor, Administrator; fine-grained rights (view, export, configure, etc.)
+- Supervisor can force log-off any workstation
+- All account/config data encrypted
+- Double-authentication required for mass exports
+- Device discovery & quarantine for unauthorized hardware
+- Offline, centrally-applied software updates
+
+## 6. Workstation GUI Requirements
+- Live/event video, zoom, playback
+- Alarm console, reports, dynamic map, zone/line drawing for analytics, algorithm parameter tuning
+- Search/filter historical alarms, bulk export (local, NAS, SAN)
+- License management for devices/channels
+
+## 7. Monitoring & Reporting
+- Real-time health alarms (server, analytics module, DB, stream quality, licenses, user log-ins)
+- Built-in report generator: user audit, alarms, equipment/connection faults, health, server monitoring
+
+## 8. Storage & Retention
+- Alarms, logs, event clips kept ≥30 days
+- Mass-export and backup features; encrypted output
+
+## 9. Accuracy & Acceptance Testing
+- Contractor to supply actors, props, etc., to build ≥5,000-image/clip test set per algorithm
+- System must pass accuracy benchmarks during acceptance
+
+## 10. External Connectivity
+- Broadband link to EMSD CMP (application/subscription handled by Contractor, fees by Client)
+- VAS alerts and clips viewable at CMP workstations
+
+## 11. Deliverables & Support
+- Servers, workstations, cabling, racks, licenses
+- Ongoing tech support for algorithm fine-tuning and 3rd-party integration (rate-card basis)
+- Detailed installation plans/location drawings to be agreed before each Task Order
+
+## 12. Actionable Next Steps for Dev Team
+- Design distributed GPU server cluster with 1+1 fail-over, 100-stream capacity +30% spare
+- Define micro-service or modular architecture enforcing encrypted TCP/IP & HTTPS
+- Build UI specs covering all GUI items listed in §4.5.1
+- Plan role-based access control & encryption strategy (accounts, config, video, exports)
+- Implement plugin/SDK layer and model-import workflow for additional analytics
+- Draft integration plan with existing CCTV (stream acquisition APIs) and with EMSD CMP (network, protocol, auth)
+- Establish logging, health-monitoring, reporting and retention modules

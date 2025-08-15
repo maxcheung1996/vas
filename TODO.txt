@@ -1,0 +1,29 @@
+Initialize monorepo with folders for front-end (Next.js), back-end (FastAPI), and inference service
+初始化 monorepo，建立前端（Next.js）、後端（FastAPI）、推論服務等資料夾
+
+Collect construction-site videos and sample at 1-2 fps; store raw frames
+收集工地影像，並以 1-2 fps 取樣，儲存原始影格
+
+Label sampled frames in Roboflow and create project with PPE / people-counting 
+在 Roboflow 上標註取樣影格，建立 PPE／人流計數專案
+
+Train YOLOv11 model on Roboflow, export weights & evaluation metrics
+於 Roboflow 上訓練 YOLOv11 模型，匯出權重與評估指標
+
+Dockerize inference microservice (Ultralytics YOLOv11 + CUDA), expose gRPC/REST endpoint
+將推論微服務（Ultralytics YOLOv11 + CUDA）容器化，對外提供 gRPC/REST 端點
+
+Implement RTSP ingest & 10-second clip generator around detections
+實作 RTSP 串流擷取與偵測事件前後 10 秒片段產生器
+
+Build FastAPI back-end: auth (JWT, RBAC), endpoints for cameras, alarms, clips, WebSocket push
+建置 FastAPI 後端：認證（JWT、RBAC）、攝影機／警報／片段 API、WebSocket 推播
+
+Integrate message broker (Redis Streams/Kafka) between inference and backend
+整合訊息中介（Redis Streams/Kafka）於推論與後端之間
+
+Develop Next.js UI: live video tiles, alarm console, clip playback, settings
+開發 Next.js 前端：即時影像牆、警報主控台、片段回放、設定頁
+
+Create CI/CD & Docker Compose / Kubernetes manifests; add monitoring (Prometheus, Grafana)
+建立 CI/CD 與 Docker Compose／Kubernetes 部署腳本，加入監控（Prometheus、Grafana）
