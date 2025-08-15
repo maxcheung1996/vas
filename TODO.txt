@@ -27,3 +27,18 @@ Develop Next.js UI: live video tiles, alarm console, clip playback, settings
 
 Create CI/CD & Docker Compose / Kubernetes manifests; add monitoring (Prometheus, Grafana)
 建立 CI/CD 與 Docker Compose／Kubernetes 部署腳本，加入監控（Prometheus、Grafana）
+
+
+
+
+OpenCV decodes each RTSP frame → numpy array.
+YOLOv11 runs on the array and outputs detections.
+If an unsafe class is present, Python sends one JSON message to /ws.
+FastAPI immediately re-broadcasts that JSON to all connected dashboards.
+Next.js receives the push and shows a visual cue.
+That is the entire round-trip with fewer than 120 lines of code. From here you can:
+Replace banner with full alarm table.
+Store messages to Postgres before broadcasting.
+Add JWT auth to /ws.
+Run several detect_service.py instances (one per camera) in Docker.
+But the core idea—frames stay in RAM → YOLO → WebSocket JSON → UI—remains exactly the same.
