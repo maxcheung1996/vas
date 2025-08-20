@@ -1,0 +1,30 @@
+RTSP Camera
+‣ 現場攝影機，持續推 RTSP/H.264 影像
+Ingest & AI Worker（Python）
+OpenCV + FFmpeg：解碼 RTSP
+TensorRT 優化 YOLOv11n：高速偵測
+ByteTrack：給每位工人固定 ID
+supervision：劃入口 Line + 工作區 Polygon
+事件輸出
+people_count (in/out 數)
+safety_alert (無安全帽、無背心 …)
+jpeg_frame (即時縮圖)
+Kafka（事件總配貨中心）
+存放並分發事件資料
+支援回放與橫向擴充
+WebSocket Gateway
+從 AI Worker 直接或透過 Kafka 拿 jpeg_frame
+推送至瀏覽器顯示即時畫面、偵測框
+Alert Service
+監聽 safety_alert Topic
+條件判斷後發 Email / SMS / PagerDuty
+Report Service + Grafana
+從 people_count Topic 聚合資料
+顯示班次進出統計、告警趨勢
+Time-Series Database (TimescaleDB)
+長期保存 in/out 數與告警
+提供 API/SQL 報表
+Next.js 前端
+WebSocket 顯示即時影像＋框線
+REST/Kafka 讀取告警 & 報表
+可切換 Fast / Balanced / Quality 預設參數

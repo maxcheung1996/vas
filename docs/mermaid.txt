@@ -1,0 +1,44 @@
+flowchart TD
+    %% ========= Sources =========
+    subgraph Site Cameras
+        CAM["RTSP IP Cameras (100 plus Routes)"]
+    end
+
+    %% ========= AI / Ingest =========
+    AI["Ingest & AI Worker (OpenCV + TensorRT YOLOv11n ByteTrack · supervision)"]
+
+    CAM -- RTSP --> AI
+
+    %% ========= WebSocket live view =========
+    WS["WebSocket Gateway (FastAPI / Starlette)"]
+    BROWSER["Next.js Frontend (Live Preview + UI)"]
+
+    AI -- JPEG frames --> WS
+    WS --> BROWSER
+
+    %% ========= Event bus =========
+    KAFKA["Kafka Cluster (people_count · safety_alert)"]
+
+    AI -- JSON events --> KAFKA
+
+    %% ========= Consumers =========
+    ALERT["Alert Service (SMS / Email / PagerDuty)"]
+    REPORT["Report Aggregator (Batch Jobs)"]
+    TSDB["TimescaleDB (Events Storage)"]
+    GRAFANA["Grafana Dashboard"]
+
+    KAFKA --> ALERT
+    KAFKA --> REPORT
+    KAFKA --> TSDB
+
+    REPORT --> GRAFANA
+    TSDB --> GRAFANA
+
+    %% ========= Styling =========
+    classDef src     fill:#fef0f0,stroke:#d33,stroke-width:1px,color:#000;
+    classDef compute fill:#f0fff0,stroke:#393,stroke-width:1px,color:#000;
+    classDef bus     fill:#f0f8ff,stroke:#06c,stroke-width:1px,color:#000;
+    classDef svc     fill:#fffbe6,stroke:#e6ac00,stroke-width:1px,color:#000;
+    class CAM,AI,WS src,compute;
+    class KAFKA bus;
+    class ALERT,REPORT,TSDB,GRAFANA,BROWSER svc;
