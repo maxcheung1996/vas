@@ -13,7 +13,8 @@ flowchart TD
     WS["WebSocket Gateway (FastAPI / Starlette)"]
     BROWSER["Next.js Frontend (Live Preview + UI)"]
 
-    AI -- JPEG frames --> WS
+    AI -- JPEG frames & JSON events --> KAFKA
+    KAFKA --> WS
     WS --> BROWSER
 
     %% ========= Event bus =========
