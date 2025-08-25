@@ -61,6 +61,9 @@ body {
   padding: 1rem;
   border-radius: 8px;
   margin-top: 1rem;
+  /* Prevent layout shifts by using consistent sizing */
+  flex-shrink: 0;
+  overflow: hidden;
 }
 
 .alert-item {
@@ -84,7 +87,7 @@ body {
   justify-content: space-between;
   align-items: center;
   padding: 1rem;
-  background: #f3f4f6;
+  background: #1f2937;
   border-radius: 8px;
   margin-bottom: 1rem;
 }
@@ -104,4 +107,64 @@ body {
 
 .status-dot.connected {
   background: #10b981;
+}
+
+/* Modern VAS Styles */
+.glass-panel {
+  background: rgba(26, 27, 30, 0.8) !important;
+  backdrop-filter: blur(15px) !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+}
+
+.gradient-bg {
+  background: linear-gradient(135deg, #0c0c0c 0%, #1a1a1a 100%) !important;
+}
+
+/* Smooth animations for all interactive elements */
+.mantine-Button-root {
+  transition: all 0.2s ease !important;
+}
+
+.mantine-Card-root {
+  transition: transform 0.2s ease, box-shadow 0.2s ease !important;
+}
+
+.mantine-Card-root:hover {
+  transform: translateY(-2px) !important;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.3) !important;
+}
+
+/* Video stream enhancements */
+.video-container img {
+  transition: all 0.3s ease !important;
+  filter: contrast(1.05) brightness(1.02) !important;
+}
+
+/* Status indicators */
+.status-indicator {
+  animation: pulse 2s infinite !important;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+
+/* Glass morphism effects */
+.glassmorphism {
+  background: rgba(255, 255, 255, 0.05) !important;
+  backdrop-filter: blur(10px) !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+}
+
+/* Detection panel stability */
+.detection-panel-container {
+  min-height: 200px;
+  max-height: 200px;
+  overflow: hidden;
+}
+
+.zone-config-panel {
+  flex-shrink: 0;
+  overflow: visible;
 }

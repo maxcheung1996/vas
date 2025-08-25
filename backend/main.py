@@ -6,11 +6,38 @@ from fastapi.staticfiles import StaticFiles
 import uvicorn
 from typing import List
 from contextlib import asynccontextmanager
+from pydantic import BaseModel
 from config import VIDEO_CONFIG, AI_CONFIG, ENCODING_CONFIG, NETWORK_CONFIG, apply_preset, get_config_summary
+import supervision as sv
+import numpy as np
 
-MODEL_PATH = AI_CONFIG["model_path"]  # Configurable model path
+# Pydantic models for API requests
+class TrackingRequest(BaseModel):
+    enable: bool
+
+class ZoneDisplayRequest(BaseModel):
+    show: bool
+
+MODEL_PATH = AI_CONFIG["model_path"]
 CAMERA_URL = "rtsp://viewer:1234567890.@14.0.203.211:557/streaming/channels/101/"
-VIDEO_URL = "./sample_videos/dsd-site-0809.mp4"
+VIDEO_URL = "./sample_videos/dsd-site-0825_h264.mp4"
+
+# Zone Configuration (adjust these coordinates based on your video)
+# ENTRY_LINE: (x1, y1) to (x2, y2) - people crossing this line will be counted
+ENTRY_LINE_START = (200, 250)  # Left point of entry line
+ENTRY_LINE_END = (800, 250)    # Right point of entry line
+
+# WORK_ZONE: polygon points defining the work area
+WORK_ZONE_POINTS = [
+    [450, 150],   # Top-left
+    [600, 150],   # Top-right  
+    [800, 500],   # Bottom-right
+    [25, 500]    # Bottom-left
+]
+
+# Zone visualization settings
+SHOW_ZONES = True  # Set to False to hide zones after confirmation
+ENABLE_TRACKING = False  # Set to True after zones are positioned correctly
 
 # Global task variable for cleanup
 video_task = None
@@ -43,6 +70,13 @@ app.add_middleware(
 )
 
 model = YOLO(MODEL_PATH)
+
+# Initialize supervision zones and tracker
+entry_line = sv.LineZone(start=sv.Point(*ENTRY_LINE_START), end=sv.Point(*ENTRY_LINE_END))
+work_zone = sv.PolygonZone(polygon=np.array(WORK_ZONE_POINTS))
+
+# Initialize ByteTrack tracker (from supervision)
+tracker = sv.ByteTrack()
 
 class ConnectionManager:
     def __init__(self):
@@ -158,7 +192,7 @@ async def stream_video():
                 cap = None
                 await asyncio.sleep(1)
                 continue
-            
+
             frame_count += 1
             
             # Skip frames if no clients connected (save resources)
@@ -176,48 +210,212 @@ async def stream_video():
 
             # Run YOLO detection (skip some frames for performance)
             detections = []
+            tracking_events = []
+            
             if frame_count % VIDEO_CONFIG["process_every_nth_frame"] == 0:  # Configurable frame processing
                 try:
-                    results = model(frame, verbose=False)[0]
+                    results = model(frame, device='mps', verbose=False)[0]
                     
-                    # Draw detection boxes on frame
+                    # Process detections
                     if results.boxes is not None:
+                        # Collect valid detections
+                        persons_for_tracking = []
+                        all_detections = []
+                        
                         for box in results.boxes:
                             if box is not None:
                                 cls = model.names[int(box.cls)]
                                 conf = float(box.conf)
                                 
-                                if conf > AI_CONFIG["confidence_threshold"]:
+                                if conf > AI_CONFIG["confidence_threshold"] and cls in {"person", "helmet", "safety_vest"}:
                                     x1, y1, x2, y2 = map(int, box.xyxy.tolist()[0])
                                     
-                                    # Use different colors for different object categories
-                                    if cls == "person":
-                                        color = (255, 0, 0)  # Blue for people
-                                    elif cls in ["car", "bus", "truck", "bicycle", "motorcycle", "airplane", "boat", "train"]:
-                                        color = (0, 165, 255)  # Orange for vehicles
-                                    elif cls in ["cat", "dog", "bird", "horse", "sheep", "cow", "elephant", "bear", "zebra", "giraffe"]:
-                                        color = (0, 255, 255)  # Yellow for animals
-                                    elif cls in ["chair", "couch", "dining table", "bed", "toilet", "tv", "laptop", "keyboard", "cell phone", "microwave", "oven", "toaster", "refrigerator", "book", "clock", "vase", "scissors", "teddy bear", "hair drier", "toothbrush"]:
-                                        color = (255, 0, 255)  # Purple/Magenta for household items
-                                    elif cls in ["sports ball", "baseball bat", "baseball glove", "skateboard", "surfboard", "tennis racket"]:
-                                        color = (0, 0, 255)  # Red for sports equipment
-                                    elif cls in ["apple", "orange", "banana", "hot dog", "pizza", "donut", "cake"]:
-                                        color = (255, 192, 203)  # Pink for food
-                                    else:
-                                        color = (0, 255, 0)  # Green for other objects
-                                    
-                                    cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
-                                    cv2.putText(frame, f"{cls}: {conf:.2f}", (x1, y1-10), 
-                                               cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
-                                    
-                                    detections.append({
+                                    detection_data = {
                                         "class": cls,
                                         "confidence": conf,
                                         "bbox": [x1, y1, x2, y2],
-                                        "alert": False  # No specific alerts for general detection
-                                    })
+                                        "alert": False
+                                    }
+                                    all_detections.append(detection_data)
+                                    
+                                    # Collect persons for tracking
+                                    if cls == "person":
+                                        persons_for_tracking.append({
+                                            "bbox": [x1, y1, x2, y2],
+                                            "confidence": conf
+                                        })
+                        
+                        detections = all_detections
+                        
+                        # Tracking logic (if enabled) - using supervision's ByteTrack
+                        if ENABLE_TRACKING and len(persons_for_tracking) > 0:
+                            try:
+                                # Convert person detections to supervision format
+                                xyxy = []
+                                confidences = []
+                                class_ids = []
+                                
+                                for p in persons_for_tracking:
+                                    bbox = p["bbox"]  # [x1, y1, x2, y2]
+                                    conf = p["confidence"]
+                                    xyxy.append(bbox)
+                                    confidences.append(conf)
+                                    class_ids.append(0)  # 0 for person class
+                                
+                                # Create supervision Detections object
+                                detections_sv = sv.Detections(
+                                    xyxy=np.array(xyxy),
+                                    confidence=np.array(confidences),
+                                    class_id=np.array(class_ids)
+                                )
+                                
+                                # Update tracker with detections
+                                detections_sv = tracker.update_with_detections(detections_sv)
+
+
+                                
+                                # Process tracking results with proper error handling
+                                if hasattr(detections_sv, 'tracker_id') and detections_sv.tracker_id is not None and len(detections_sv.tracker_id) > 0:
+                                    for i, tracker_id in enumerate(detections_sv.tracker_id):
+                                        try:
+                                            if tracker_id is None:
+                                                continue
+                                            
+                                            # Get bounding box coordinates
+                                            x1, y1, x2, y2 = map(int, detections_sv.xyxy[i])
+                                            center_x = (x1 + x2) // 2
+                                            center_y = (y1 + y2) // 2
+                                            
+                                            # Draw person with track ID
+                                            cv2.rectangle(frame, (x1, y1), (x2, y2), (255, 0, 0), 3)
+                                            cv2.putText(frame, f"ID:{tracker_id}", (x1, y1-30), 
+                                                       cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 0, 0), 2)
+                                            
+                                            # Line crossing detection using supervision LineZone
+                                            # Create detection for this single tracked person
+                                            single_detection = sv.Detections(
+                                                xyxy=np.array([[x1, y1, x2, y2]]),
+                                                confidence=np.array([1.0]),
+                                                tracker_id=np.array([tracker_id])
+                                            )
+                                            
+                                            # Trigger line zone with the detection
+                                            crossed_in, crossed_out = entry_line.trigger(single_detection)
+                                            
+                                            if crossed_in or crossed_out:
+                                                tracking_events.append({
+                                                    "type": "line_crossing",
+                                                    "track_id": int(tracker_id),
+                                                    "in_count": entry_line.in_count,
+                                                    "out_count": entry_line.out_count,
+                                                    "center": [center_x, center_y],
+                                                    "timestamp": time.time()
+                                                })
+                                                direction = "in" if crossed_in else "out"
+                                                print(f"🚶 Person ID:{tracker_id} crossed line {direction}. In:{entry_line.in_count}, Out:{entry_line.out_count}")
+                                            
+                                            # Check if person is in work zone using supervision PolygonZone
+                                            in_work_zone = work_zone.trigger(single_detection)
+                                            
+                                            print(f"Work zone check completed for track {tracker_id}")
+                                            
+                                            if in_work_zone:
+                                                # Check for safety violations
+                                                has_helmet = False
+                                                has_vest = False
+                                                
+                                                # Check if helmet/vest detected near this person
+                                                for det in all_detections:
+                                                    if det["class"] in ["helmet", "safety_vest"]:
+                                                        det_bbox = det["bbox"]
+                                                        if boxes_overlap([x1, y1, x2, y2], det_bbox):
+                                                            if det["class"] == "helmet":
+                                                                has_helmet = True
+                                                            elif det["class"] == "safety_vest":
+                                                                has_vest = True
+                                                
+                                                # Generate safety alerts
+                                                violations = []
+                                                if not has_helmet:
+                                                    violations.append("no_helmet")
+                                                if not has_vest:
+                                                    violations.append("no_vest")
+                                                
+                                                if violations:
+                                                    tracking_events.append({
+                                                        "type": "safety_violation",
+                                                        "track_id": int(tracker_id),
+                                                        "violations": violations,
+                                                        "position": [center_x, center_y],
+                                                        "timestamp": time.time()
+                                                    })
+                                                    print(f"⚠️ Safety violation by ID:{tracker_id}: {violations}")
+                                                    
+                                                    # Update detection alert status
+                                                    for det in detections:
+                                                        if det["class"] == "person" and det["bbox"] == [x1, y1, x2, y2]:
+                                                            det["alert"] = True
+                                                            break
+                                        except Exception as track_error:
+                                            print(f"Error processing individual track {i}: {track_error}")
+                                            import traceback
+                                            traceback.print_exc()
+                                            continue
+                            
+                            except Exception as e:
+                                print(f"Error in tracking: {e}")
+                                import traceback
+                                traceback.print_exc()
+                        
+                        # Non-tracking mode: simple detection display
+                        if not ENABLE_TRACKING:
+                            for det in all_detections:
+                                x1, y1, x2, y2 = det["bbox"]
+                                cls = det["class"]
+                                conf = det["confidence"]
+                                
+                                # Simple color scheme
+                                if cls == "person":
+                                    color = (255, 0, 0)   # Blue for persons
+                                elif cls == "helmet":
+                                    color = (0, 255, 255) # Yellow/Cyan for helmets
+                                else:  # safety_vest
+                                    color = (0, 255, 0)   # Green for safety vests
+                                
+                                cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
+                                cv2.putText(frame, f"{cls}: {conf:.2f}", (x1, y1-10), 
+                                           cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
+                        else:
+                            # In tracking mode, also draw helmet and vest detections
+                            for det in all_detections:
+                                if det["class"] in ["helmet", "safety_vest"]:
+                                    x1, y1, x2, y2 = det["bbox"]
+                                    cls = det["class"]
+                                    conf = det["confidence"]
+                                    
+                                    color = (0, 255, 255) if cls == "helmet" else (0, 255, 0)
+                                    cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
+                                    cv2.putText(frame, f"{cls}: {conf:.2f}", (x1, y1-10), 
+                                               cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
+                
                 except Exception as e:
                     print(f"Error in YOLO detection: {e}")
+
+            # Draw zones for visualization (if enabled)
+            if SHOW_ZONES:
+                # Draw entry line (red line)
+                cv2.line(frame, ENTRY_LINE_START, ENTRY_LINE_END, (0, 0, 255), 3)
+                cv2.putText(frame, "ENTRY LINE", 
+                           (ENTRY_LINE_START[0], ENTRY_LINE_START[1] - 10),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+                
+                # Draw work zone polygon (green outline)
+                pts = np.array(WORK_ZONE_POINTS, np.int32)
+                pts = pts.reshape((-1, 1, 2))
+                cv2.polylines(frame, [pts], True, (0, 255, 0), 3)
+                cv2.putText(frame, "WORK ZONE", 
+                           (WORK_ZONE_POINTS[0][0], WORK_ZONE_POINTS[0][1] - 10),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
 
             # Encode frame as JPEG with error handling
             try:
@@ -239,7 +437,14 @@ async def stream_video():
                         "type": "video_frame",
                         "timestamp": time.time(),
                         "frame": frame_base64,
-                        "detections": limited_detections
+                        "detections": limited_detections,
+                        "zones": {
+                            "entry_line": {"start": ENTRY_LINE_START, "end": ENTRY_LINE_END},
+                            "work_zone": {"points": WORK_ZONE_POINTS},
+                            "show_zones": SHOW_ZONES,
+                            "tracking_enabled": ENABLE_TRACKING
+                        },
+                        "tracking_events": tracking_events if ENABLE_TRACKING else []
                     }
                     
                     await manager.broadcast(json.dumps(message))
@@ -257,8 +462,6 @@ async def stream_video():
                 cap.release()
             cap = None
             await asyncio.sleep(2)  # Wait before retry
-
-# Startup is now handled by lifespan context manager
 
 @app.get("/health")
 async def health_check():
@@ -300,6 +503,67 @@ async def set_performance_preset(preset: str):
 async def get_config():
     """Get current configuration"""
     return get_config_summary()
+
+@app.post("/zones/entry_line")
+async def update_entry_line(start_x: int, start_y: int, end_x: int, end_y: int):
+    """Update entry line coordinates"""
+    global ENTRY_LINE_START, ENTRY_LINE_END, entry_line
+    ENTRY_LINE_START = (start_x, start_y)
+    ENTRY_LINE_END = (end_x, end_y)
+    entry_line = sv.LineZone(start=sv.Point(*ENTRY_LINE_START), end=sv.Point(*ENTRY_LINE_END))
+    return {"status": "success", "entry_line": {"start": ENTRY_LINE_START, "end": ENTRY_LINE_END}}
+
+@app.post("/zones/work_zone")
+async def update_work_zone(points: List[List[int]]):
+    """Update work zone polygon points"""
+    global WORK_ZONE_POINTS, work_zone
+    WORK_ZONE_POINTS = points
+    work_zone = sv.PolygonZone(polygon=np.array(WORK_ZONE_POINTS))
+    return {"status": "success", "work_zone": {"points": WORK_ZONE_POINTS}}
+
+@app.post("/zones/toggle_display")
+async def toggle_zone_display(request: ZoneDisplayRequest):
+    """Toggle zone visualization on/off"""
+    global SHOW_ZONES
+    SHOW_ZONES = request.show
+    return {"status": "success", "show_zones": SHOW_ZONES}
+
+@app.post("/tracking/enable")
+async def enable_tracking(request: TrackingRequest):
+    """Enable/disable tracking functionality"""
+    global ENABLE_TRACKING, tracker, entry_line
+    ENABLE_TRACKING = request.enable
+    
+    if request.enable:
+        # Reset tracker and counters when enabling
+        tracker = sv.ByteTrack()
+        entry_line = sv.LineZone(start=sv.Point(*ENTRY_LINE_START), end=sv.Point(*ENTRY_LINE_END))
+        print("✅ Tracking enabled - ByteTrack initialized")
+    else:
+        print("⏸️ Tracking disabled")
+    
+    return {"status": "success", "tracking_enabled": ENABLE_TRACKING}
+
+def boxes_overlap(box1, box2, threshold=0.3):
+    """Check if two bounding boxes overlap significantly"""
+    x1_min, y1_min, x1_max, y1_max = box1
+    x2_min, y2_min, x2_max, y2_max = box2
+    
+    # Calculate intersection
+    x_min = max(x1_min, x2_min)
+    y_min = max(y1_min, y2_min)
+    x_max = min(x1_max, x2_max)
+    y_max = min(y1_max, y2_max)
+    
+    if x_min >= x_max or y_min >= y_max:
+        return False
+    
+    intersection = (x_max - x_min) * (y_max - y_min)
+    box2_area = (x2_max - x2_min) * (y2_max - y2_min)
+    
+    # Check if helmet/vest overlaps significantly with person
+    overlap_ratio = intersection / box2_area if box2_area > 0 else 0
+    return overlap_ratio > threshold
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)

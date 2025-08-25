@@ -1,5 +1,9 @@
 import './globals.css'
 import { Inter } from 'next/font/google'
+import '@mantine/core/styles.css';
+import '@mantine/notifications/styles.css';
+import { ColorSchemeScript, MantineProvider, mantineHtmlProps } from '@mantine/core';
+import { Notifications } from '@mantine/notifications';
 
 const inter = Inter({ subsets: ['latin'] })
 
@@ -14,8 +18,16 @@ export default function RootLayout({
   children: React.ReactNode
 }) {
   return (
-    <html lang="en">
-      <body className={inter.className}>{children}</body>
+    <html lang="en" {...mantineHtmlProps}>
+      <head>
+        <ColorSchemeScript />
+      </head>
+      <body className={inter.className}>
+        <MantineProvider defaultColorScheme="dark">
+          <Notifications />
+          {children}
+        </MantineProvider>
+      </body>
     </html>
   )
 }

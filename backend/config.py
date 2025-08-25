@@ -19,10 +19,10 @@ VIDEO_CONFIG = {
 # AI Model Settings
 AI_CONFIG = {
     # Model size - affects accuracy vs speed
-    "model_path": "./pts/yolo11n.pt",  # Options: yolo11n.pt (fastest), yolo11s.pt, yolo11m.pt, yolo11l.pt, yolo11x.pt (slowest)
+    "model_path": "./pts/vas-dsd-v7-yolov11m.pt",  # Back to fastest model for stability
     
     # Detection confidence - higher = fewer false positives, lower = more detections
-    "confidence_threshold": 0.25,  # Range: 0.1 (sensitive) to 0.8 (strict)
+    "confidence_threshold": 0.25,  # Back to stable threshold
     
     # Maximum detections to display
     "max_detections": 10,  # Limit detections to reduce WebSocket message size
@@ -50,11 +50,11 @@ NETWORK_CONFIG = {
 # Performance Presets
 PRESETS = {
     "high_performance": {
-        "process_every_nth_frame": 4,
-        "max_width": 720,
-        "confidence_threshold": 0.35,
-        "jpeg_quality": 65,
-        "target_fps": 15,
+        "process_every_nth_frame": 3,
+        "max_width": 960,
+        "confidence_threshold": 0.25,
+        "jpeg_quality": 75,
+        "target_fps": 20,
     },
     
     "balanced": {
@@ -105,7 +105,7 @@ def get_config_summary():
     }
 
 # Default preset (change this to adjust default performance)
-DEFAULT_PRESET = "balanced"
+DEFAULT_PRESET = "high_performance"
 
 # Apply default preset
 apply_preset(DEFAULT_PRESET)
